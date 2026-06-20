@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+.prose-notes h2 {
+  @apply mt-6 mb-2 text-lg font-bold text-brand-700;
+}
+
+.prose-notes h3 {
+  @apply mt-4 mb-1 text-base font-semibold text-slate-800;
+}
+
+.prose-notes ul {
+  @apply list-disc pl-5 space-y-1 text-slate-700;
+}
+
+.prose-notes strong {
+  @apply font-semibold text-brand-900;
+}
