@@ -24,7 +24,7 @@ from services.session_store import store
 from services.whisper_service import transcribe_audio
 from utils.file_validator import allowed_file, has_valid_signature, safe_filename
 from utils.logging import configure_logging, get_logger
-from utils.security import AppError, error_response, rate_limit
+from utils.security import AppError, RateLimitExceeded, error_response, rate_limit
 
 configure_logging()
 logger = get_logger("lecturemind.app")
@@ -282,6 +282,11 @@ def file_too_large(_):
     return jsonify({"error": "File too large. Max 50MB."}), 413
 
 
+@app.errorhandler(RateLimitExceeded)
+def rate_limited(_):
+    return jsonify({"error": "Too many requests. Please wait a moment and try again."}), 429
+
+
 @app.errorhandler(404)
 def not_found(_):
     if request.path.startswith("/api/"):
@@ -312,6 +317,9 @@ def _frontend_built() -> bool:
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
+    # Unknown API paths must return JSON 404, not the SPA shell.
+    if path.startswith("api/"):
+        return jsonify({"error": "Not found"}), 404
     if not _frontend_built():
         return jsonify(
             {
