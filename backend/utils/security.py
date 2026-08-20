@@ -3,12 +3,18 @@
 The application intentionally does not expose exception internals, Groq
 response payloads, or stack traces to API clients. All server-side failures
 are logged in full and reduced to a safe, actionable message for the client.
+
+The rate limiter is a sliding-window counter per client key. All access to the
+shared structure is guarded by a lock because the deployment runs gunicorn
+with multiple threads. A key is only purged once its OLDEST hit has left the
+configured window, so the per-window quota cannot be reset early.
 """
 
+import threading
 import time
 from collections import defaultdict, deque
 from functools import wraps
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, Deque, Optional, Tuple
 
 from flask import jsonify, request
 
@@ -21,19 +27,22 @@ class RateLimitExceeded(Exception):
     """Raised when a client exceeds its per-window request quota."""
 
 
-_hits: dict[str, deque] = defaultdict(deque)
+_hits: Dict[str, Deque[float]] = defaultdict(deque)
+_hits_lock = threading.Lock()
 _last_cleanup = time.monotonic()
 _CLEANUP_INTERVAL = 600
 
 
-def _cleanup(now: float) -> None:
-    """Drop entries that have not been touched within the cleanup window."""
+def _cleanup(now: float, window: float) -> None:
+    """Drop keys whose oldest hit has left the window (memory bound, not quota reset)."""
     global _last_cleanup
     if now - _last_cleanup < _CLEANUP_INTERVAL:
         return
     _last_cleanup = now
-    for key in [k for k, q in _hits.items() if not q or now - q[-1] > _CLEANUP_INTERVAL]:
-        _hits.pop(key, None)
+    with _hits_lock:
+        stale = [k for k, q in _hits.items() if not q or now - q[0] > window]
+        for key in stale:
+            _hits.pop(key, None)
 
 
 def check_rate_limit(key: str, limit: int, window: float) -> None:
@@ -41,13 +50,14 @@ def check_rate_limit(key: str, limit: int, window: float) -> None:
     if limit <= 0:
         return
     now = time.monotonic()
-    _cleanup(now)
-    queue = _hits[key]
-    while queue and now - queue[0] > window:
-        queue.popleft()
-    if len(queue) >= limit:
-        raise RateLimitExceeded()
-    queue.append(now)
+    _cleanup(now, window)
+    with _hits_lock:
+        queue = _hits[key]
+        while queue and now - queue[0] > window:
+            queue.popleft()
+        if len(queue) >= limit:
+            raise RateLimitExceeded()
+        queue.append(now)
 
 
 def rate_limit(limit: int, window: float, key_prefix: str) -> Callable:

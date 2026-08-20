@@ -12,6 +12,13 @@ def test_unknown_api_route_returns_json_404(app):
     assert resp.get_json() == {"error": "Not found"}
 
 
+def test_exact_api_path_returns_json_404(app):
+    """GET /api (no trailing path) must also be a JSON 404, not the SPA shell."""
+    resp = app.get("/api")
+    assert resp.status_code == 404
+    assert resp.get_json() == {"error": "Not found"}
+
+
 def test_unknown_api_route_does_not_leak_spa(app):
     """Even with the frontend unbuilt, API paths must not return the SPA shell."""
     resp = app.get("/api/definitely-not-a-route")
@@ -61,3 +68,27 @@ def test_transcribe_rate_limit_enforced(app, monkeypatch, fake_audio_mp3):
     third = _post()
     assert third.status_code == 429
     assert "Too many requests" in third.get_json()["error"]
+
+
+def test_rate_limit_decorator_wiring():
+    """The `rate_limit` decorator itself enforces the limit with a real 429."""
+    from flask import Flask, jsonify
+
+    from utils.security import RateLimitExceeded, rate_limit
+
+    tiny = Flask("rate-limit-wiring")
+    tiny.config["TESTING"] = True
+
+    @tiny.errorhandler(RateLimitExceeded)
+    def _rate_limited(_):
+        return jsonify({"error": "Too many requests"}), 429
+
+    @tiny.route("/ping", methods=["GET"])
+    @rate_limit(2, 3600, "wiring")
+    def ping():
+        return jsonify({"ok": True})
+
+    client = tiny.test_client()
+    assert client.get("/ping").status_code == 200
+    assert client.get("/ping").status_code == 200
+    assert client.get("/ping").status_code == 429

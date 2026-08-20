@@ -39,8 +39,8 @@ def test_quiz_success_with_session_header(app, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.get_json() == QUIZ
-    # The generated quiz was persisted onto the session.
-    assert store.get(session_id)["quiz"] == QUIZ
+    # The transcript is resolved from the session, and the session survives.
+    assert store.get(session_id)["transcript"] == TRANSCRIPT
 
 
 def test_flashcards_success_with_session_header(app, monkeypatch):
@@ -53,7 +53,7 @@ def test_flashcards_success_with_session_header(app, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.get_json() == CARDS
-    assert store.get(session_id)["flashcards"] == CARDS
+    assert store.get(session_id)["transcript"] == TRANSCRIPT
 
 
 def test_quiz_success_with_body_transcript(app, monkeypatch):

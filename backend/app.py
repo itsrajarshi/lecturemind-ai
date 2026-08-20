@@ -10,7 +10,6 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from config import (
     BASE_DIR,
     CORS_ORIGINS,
-    IS_PRODUCTION,
     MAX_CONTENT_LENGTH,
     RATE_LIMIT_GENERATE,
     RATE_LIMIT_TRANSCRIBE,
@@ -125,23 +124,29 @@ def transcribe():
     ext = file.filename.rsplit(".", 1)[1].lower()
     filename = safe_filename(f"{session_id}.{ext}")
     filepath = UPLOAD_FOLDER / filename
-    file.save(filepath)
-
-    if not has_valid_signature(filepath):
-        filepath.unlink(missing_ok=True)
-        return jsonify(
-            {"error": "The file does not appear to be valid audio. Allowed: MP3, WAV, M4A"}
-        ), 400
-
+    file_saved = False
+    result = None
     try:
+        file.save(filepath)
+        file_saved = True
+
+        if not has_valid_signature(filepath):
+            return jsonify(
+                {"error": "The file does not appear to be valid audio. Allowed: MP3, WAV, M4A"}
+            ), 400
+
         result = transcribe_audio(str(filepath))
     except Exception as exc:
         logger.exception("transcription_failed session_id=%s", session_id)
-        try:
-            filepath.unlink(missing_ok=True)
-        except OSError:
-            pass
         return error_response(exc)
+    finally:
+        # Delete the temp file on every failure path; on success the session
+        # owns it until it expires.
+        if file_saved and not result:
+            try:
+                filepath.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     if not result["text"]:
         logger.warning("transcription_empty session_id=%s", session_id)
@@ -184,9 +189,6 @@ def notes():
         logger.exception("notes_generation_failed session_id=%s", session_id)
         return error_response(exc)
 
-    if session_id:
-        store.update(session_id, notes=notes_md)
-
     return jsonify({"notes": notes_md, "format": "markdown"})
 
 
@@ -209,9 +211,6 @@ def quiz():
         logger.exception("quiz_generation_failed session_id=%s", session_id)
         return error_response(exc)
 
-    if session_id:
-        store.update(session_id, quiz=quiz_data)
-
     return jsonify(quiz_data)
 
 
@@ -233,9 +232,6 @@ def flashcards():
     except Exception as exc:
         logger.exception("flashcards_generation_failed session_id=%s", session_id)
         return error_response(exc)
-
-    if session_id:
-        store.update(session_id, flashcards=cards)
 
     return jsonify(cards)
 
@@ -318,7 +314,7 @@ def _frontend_built() -> bool:
 @app.route("/<path:path>")
 def serve_frontend(path):
     # Unknown API paths must return JSON 404, not the SPA shell.
-    if path.startswith("api/"):
+    if path == "api" or path.startswith("api/"):
         return jsonify({"error": "Not found"}), 404
     if not _frontend_built():
         return jsonify(
@@ -334,4 +330,7 @@ def serve_frontend(path):
 
 
 if __name__ == "__main__":
-    app.run(debug=not IS_PRODUCTION, host="0.0.0.0", port=5000)
+    import os
+
+    debug = os.getenv("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
+    app.run(debug=debug, host="0.0.0.0", port=5000)

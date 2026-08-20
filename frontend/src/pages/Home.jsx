@@ -36,6 +36,8 @@ export default function Home() {
     setToast({ message, type });
   }, []);
 
+  const dismissToast = useCallback(() => setToast(null), []);
+
   const stage = !transcript
     ? loading.transcribe
       ? "transcribe"
@@ -187,7 +189,7 @@ export default function Home() {
         <FlashcardsPanel deck={flashcards} loading={loading.flashcards} />
       </main>
       <Footer />
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }

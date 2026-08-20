@@ -5,7 +5,7 @@ const STEPS = [
 ];
 
 const statusFor = (stage, stepKey) => {
-  const order = { upload: 0, transcribe: 1, generate: 2 };
+  const order = { upload: 0, transcribe: 1, generate: 2, complete: 3 };
   const active = order[stage];
   const index = order[stepKey];
   if (index < active) return "done";

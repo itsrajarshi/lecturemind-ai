@@ -17,9 +17,13 @@ from io import BytesIO
 from pathlib import Path
 
 from fpdf import FPDF
+from fpdf.errors import FPDFException
 
 from config import BASE_DIR
+from utils.logging import get_logger
 from utils.security import AppError
+
+logger = get_logger("lecturemind.export")
 
 MAX_TITLE_LENGTH = 120
 MAX_NOTES_LENGTH = 1_000_000
@@ -96,16 +100,21 @@ def _add_fonts(pdf: FPDF) -> bool:
 
 
 def _safe_multi_cell(pdf: FPDF, line: str) -> None:
-    """Render a line, degrading gracefully if a glyph is missing from all fonts."""
+    """Render a line, degrading gracefully if a glyph is missing from all fonts.
+
+    Only fpdf's own rendering failures are caught (primarily missing glyphs).
+    Any other exception is a real bug and propagates to the route's error
+    handler so it is logged and surfaced, rather than silently swallowed.
+    """
     try:
         pdf.multi_cell(0, 5.5, line)
-    except Exception:
-        # Replace any characters the bundled fonts cannot render.
+    except FPDFException:
+        logger.warning("pdf_glyph_fallback line_chars=%d preview=%r", len(line), line[:40])
         safe = line.encode("ascii", "replace").decode("ascii")
         try:
             pdf.multi_cell(0, 5.5, safe)
-        except Exception:
-            pass  # Never let content break the export.
+        except FPDFException:
+            logger.warning("pdf_line_skipped line_chars=%d", len(line))
 
 
 def notes_to_txt(notes: str, title: str = "Lecture Notes") -> bytes:

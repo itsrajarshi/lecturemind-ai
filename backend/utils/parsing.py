@@ -38,8 +38,12 @@ def extract_json_object(raw: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         pass
 
-    start = text.find("{")
-    if start != -1:
+    # Scan for an object starting at each '{' until one parses.
+    search_from = 0
+    while True:
+        start = text.find("{", search_from)
+        if start == -1:
+            break
         depth = 0
         in_str = False
         escaped = False
@@ -65,7 +69,9 @@ def extract_json_object(raw: str) -> Dict[str, Any]:
                         if isinstance(parsed, dict):
                             return parsed
                     except json.JSONDecodeError:
-                        break
+                        pass
+                    break
+        search_from = start + 1
 
     raise SchemaError("Could not parse JSON from model output")
 
