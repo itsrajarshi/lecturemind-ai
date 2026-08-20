@@ -1,0 +1,46 @@
+# Environment & secrets
+.env
+.env.local
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.so
+
+# Node
+node_modules/
+frontend/dist/
+npm-debug.log*
+
+# Generated / runtime artifacts
+backend/static/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Demo / media (too large for git)
+demo/
+*.mp3
+*.mp4
+
+# Test / tooling output
+playwright-report/
+test-results/
+coverage/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

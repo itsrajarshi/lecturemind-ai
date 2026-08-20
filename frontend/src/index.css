@@ -6,6 +6,11 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* ---------- Study notes (markdown) ---------- */
+.prose-notes h1 {
+  @apply mt-6 mb-2 text-xl font-bold text-brand-700;
+}
+
 .prose-notes h2 {
   @apply mt-6 mb-2 text-lg font-bold text-brand-700;
 }
@@ -14,10 +19,84 @@ body {
   @apply mt-4 mb-1 text-base font-semibold text-slate-800;
 }
 
+.prose-notes p {
+  @apply my-2 leading-relaxed text-slate-700;
+}
+
 .prose-notes ul {
-  @apply list-disc pl-5 space-y-1 text-slate-700;
+  @apply list-disc space-y-1 pl-5 text-slate-700;
+}
+
+.prose-notes ol {
+  @apply list-decimal space-y-1 pl-5 text-slate-700;
+}
+
+.prose-notes li {
+  @apply leading-relaxed;
 }
 
 .prose-notes strong {
   @apply font-semibold text-brand-900;
+}
+
+.prose-notes a {
+  @apply text-brand-600 underline;
+}
+
+.prose-notes code {
+  @apply rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800;
+}
+
+.prose-notes pre {
+  @apply my-3 overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100;
+}
+
+.prose-notes pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+
+.prose-notes blockquote {
+  @apply my-3 border-l-4 border-brand-200 pl-3 italic text-slate-500;
+}
+
+.prose-notes table {
+  @apply my-3 w-full border-collapse text-sm;
+}
+
+.prose-notes th {
+  @apply border border-slate-300 bg-slate-100 px-2 py-1 text-left font-semibold;
+}
+
+.prose-notes td {
+  @apply border border-slate-300 px-2 py-1;
+}
+
+.prose-notes hr {
+  @apply my-4 border-slate-200;
+}
+
+/* ---------- Accessibility ---------- */
+:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip-link {
+  @apply absolute left-4 top-4 z-[100] -translate-y-24 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-transform;
+}
+
+.skip-link:focus {
+  @apply translate-y-0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
