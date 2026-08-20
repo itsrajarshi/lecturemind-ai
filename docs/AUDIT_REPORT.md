@@ -1,21 +1,20 @@
 # LectureMind AI — Codebase Audit Report
 
-> Audit of the repository **after** the hardening refactor (commit `57e74f5`,
-> "fix: replace deprecated Groq model, harden backend security and
-> reliability"). The report distinguishes three things: what was found, what
+> Audit of the repository **after** the hardening refactor (commits `57e74f5`
+> and `061b93e`). The report distinguishes three things: what was found, what
 > was fixed, and what remains as a documented limitation. Findings were
-> verified against the code and the pytest suite under `backend/tests/`.
+> verified against the code, the pytest suite under `backend/tests/`, and the
+> Vitest/Playwright suites under `frontend/`.
 
 ## 1. Scope and method
 
 - Reviewed every backend module (`app.py`, `config.py`, `services/*`,
   `utils/*`), the full frontend (`src/**`), build/deploy config
   (`render.yaml`, `render-build.sh`, `package.json`), and git history.
-- Ran/read the backend test suite, which explicitly documents several
-  **residual** bugs that were intentionally left unpatched but are asserted
-  for regressions (`test_security.py`, `test_export.py`).
-- Compared against the pre-refactor state (`b164a1d`) to separate "found and
-  fixed" from "still present".
+- Ran/read the backend test suite, which covers health, upload validation,
+  session lifecycle, generation, export, and security behavior.
+- Compared against the pre-refactor state to separate "found and fixed" from
+  "still present".
 
 ## 2. Findings summary (severity table)
 
@@ -27,17 +26,17 @@ Severity: **P0** = breaks the core product, **P1** = high impact
 |----|----------|---------|--------|
 | A1 | P0 | Deprecated Groq model (`llama-3.3-70b-versatile`) returned `model_not_found` on every generation request — notes/quiz/flashcards were fully broken | Fixed |
 | A2 | P0 | Raw exception internals (and the Groq API key error text) leaked to API clients via `f"...{exc}"` error strings | Fixed |
-| A3 | P1 | `venv/`, `node_modules/`, and `demo/` media had no `.gitignore` — large/vendor files were at risk of being committed | Fixed |
+| A3 | P1 | `venv/`, `node_modules/`, and `demo/` media had no `.gitignore` — large/vendor files were committed and served as truth | Fixed |
 | A4 | P1 | No rate limiting on any endpoint — transcribe/generate were unlimited per IP | Fixed |
-| A5 | P1 | Sessions were unbounded (dict grew forever, TTL unknown) and uploaded audio was **never** cleaned up | Fixed |
+| A5 | P1 | Sessions were unbounded (dict grew forever) and uploaded audio was **never** cleaned up | Fixed |
 | A6 | P1 | Upload validation trusted only the filename extension; renamed binaries passed through | Fixed |
 | A7 | P1 | Prompts were not hardened against transcript-based prompt injection | Fixed |
-| A8 | P1 | Stale `backend/static` build could be committed and served as truth | Fixed |
-| A9 | P1 | Docs claimed a locally-hosted `openai-whisper` model that does not exist | Fixed in code / docs stale |
-| A10 | P2 | Unknown `GET /api/*` returns 200 (SPA payload) instead of the specified `404 {"error":"Not found"}` — the 404 handler is shadowed by the catch-all frontend route | Remains (documented) |
-| A11 | P2 | Rate-limit enforcement returns **500** instead of the specified **429** because `RateLimitExceeded` has no dedicated error handler | Remains (documented) |
-| A12 | P2 | `notes_to_pdf` crashes for (a) some multi-line content ("Not enough horizontal space to render a single character") and (b) lines rewritten to the U+2022 bullet, which fpdf2's built-in Helvetica cannot encode | Remains (documented) |
-| A13 | P2 | Quiz/flashcard panels do not reset internal state (`answers`/`submitted`, `index`/`flipped`) when a new deck is generated | Partial |
+| A8 | P1 | Stale `backend/static` build was committed and could be served as truth | Fixed |
+| A9 | P1 | Docs claimed a locally-hosted `openai-whisper` model that does not exist | Fixed |
+| A10 | P2 | Unknown `GET /api/*` returned 200 (SPA payload) instead of `404 {"error":"Not found"}` — the 404 handler was shadowed by the catch-all frontend route | Fixed |
+| A11 | P2 | Rate-limit enforcement returned **500** instead of **429** because `RateLimitExceeded` had no dedicated error handler | Fixed |
+| A12 | P2 | `notes_to_pdf` crashed for multi-line content and the U+2022 bullet (fpdf2 built-in Helvetica, latin-1 only) | Fixed |
+| A13 | P2 | Quiz/flashcard panels did not reset internal state when a new deck was generated | Fixed |
 | A14 | P2 | CORS defaulted to `*` regardless of environment | Fixed |
 | A15 | P2 | Old generation code truncated transcripts at a hard 12,000 chars with no boundary awareness | Fixed |
 | A16 | P3 | Missing favicon caused a 404 in the browser console | Fixed |
@@ -99,45 +98,36 @@ on every deploy, and `.gitignore` excludes `backend/static/` and
 Groq-hosted `whisper-large-v3`. This `docs/` set describes the real state;
 `PROJECT_DOCUMENTATION.md` is flagged stale and should be updated or removed.
 
-## 4. What remains (documented limitations)
+## 4. Residual issues fixed after the audit
 
-These are real, reproducible behaviors in the current codebase. They are
-tracked in `docs/TECH_DEBT.md` with suggested remediations.
+The findings below were reported by the original audit and the test suite,
+then **fixed** in commit `061b93e`:
 
-### A10 — Unknown `GET /api/*` returns 200, not 404
-`app.py` defines a `404` error handler that returns JSON for `/api/` paths,
-but the catch-all frontend route `@app.route("/<path:path>")` matches any
-unknown GET path first, so an unknown API route is served the SPA fallback
-(200) instead. Confirmed by `test_unknown_api_route` in `test_security.py`
-("GENUINE APP BUG ... app not modified"). POST to unknown `/api/*` correctly
-yields 405 JSON.
+### A10 — Unknown `GET /api/*` returns 200, not 404 (fixed)
+`serve_frontend` now short-circuits any `api/` path with a JSON 404 before the
+SPA fallback, and the `404` error handler returns JSON for `/api/*` paths.
+Verified by `test_unknown_api_route_returns_json_404`.
 
-### A11 — Rate-limited requests return 500, not 429
-The `@rate_limit` decorator raises `RateLimitExceeded`, which `_safe_message`
-would map to 429 — but no `errorhandler(RateLimitExceeded)` exists, so Flask's
-generic 500 handler answers instead. The **limit is still enforced** (the 6th
-transcribe in an hour is rejected); only the status code is wrong. Confirmed
-by `test_transcribe_rate_limit_enforced`.
+### A11 — Rate-limited requests return 500, not 429 (fixed)
+A dedicated `@app.errorhandler(RateLimitExceeded)` now returns
+`429 {"error":"Too many requests..."}`. Verified by
+`test_transcribe_rate_limit_enforced`.
 
-### A12 — PDF export edge cases
-`export_service.notes_to_pdf` rewrites `- ` lines to `  • ` (U+2022) and feeds
-each line to fpdf2's built-in Helvetica (latin-1). Multi-line content can
-trigger "Not enough horizontal space to render a single character", and the
-U+2022 bullet cannot be encoded by the font, both producing 500s. The test
-suite exercises only a single ASCII line so the happy path stays covered.
+### A12 — PDF export edge cases (fixed)
+`notes_to_pdf` now bundles DejaVu Sans + Noto Sans Devanagari fonts (Unicode),
+strips markdown syntax, wraps long lines/tokens, and degrades gracefully if a
+glyph is missing. Multi-line bullets, Hindi text, and long tokens all export
+cleanly. Verified by `test_download_notes_pdf_multiline_and_unicode`.
 
-### A13 — Quiz/flashcard panel state not reset on regeneration
-`Home.jsx` correctly clears `notes`/`quiz`/`flashcards` when a **new upload**
-happens, but `QuizPanel` keeps `answers`/`submitted` and `FlashcardsPanel`
-keeps `index`/`flipped` when the user clicks **Generate again** with the same
-transcript — a fresh quiz can show the previous submission's coloring and
-score. Page-level state resets are implemented; panel-level resets are not.
+### A13 — Quiz/flashcard panel state not reset on regeneration (fixed)
+`QuizPanel` and `FlashcardsPanel` now reset their internal state via `useEffect`
+when a new quiz/deck arrives. Verified by the Vitest suites.
 
 ## 5. Verification
 
-The backend suite covers health, upload validation, magic bytes, session
-TTL/sweep/file cleanup, generation success and sanitized errors, security
-headers, CORS, rate limiting, and export. Run with:
+Backend (`backend/tests/`, 29 tests): health, upload validation, magic bytes,
+session TTL/sweep/file cleanup, generation success + sanitized errors, security
+headers, CORS, rate limiting, export. Run with:
 
 ```
 cd backend
@@ -145,9 +135,15 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Frontend tooling (`vitest`, `@playwright/test`) is configured in
-`package.json` but no frontend test files exist yet — see
-`docs/TECH_DEBT.md`.
+Frontend: Vitest (26 tests) under `frontend/src/**/*.test.{js,jsx}` and
+Playwright E2E (2 tests) under `frontend/e2e/` — the E2E suite stubs the AI
+backends so it runs deterministically without an API key.
+
+```
+cd frontend
+npm test          # unit tests
+npm run test:e2e  # Playwright (build first)
+```
 
 ## 6. Conclusion
 

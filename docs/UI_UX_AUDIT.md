@@ -64,19 +64,19 @@ generated material; errors surface in a banner at the top of the page.
 
 | Improvement | Status | Notes |
 |---|---|---|
-| Drag-and-drop uploader | In flight | Current uploader is click-to-browse; drag-and-drop with drop-zone highlighting is the planned enhancement |
-| Pipeline progress indicator | In flight | Step tracker (upload → transcribe → generate → export) so users see where they are in a multi-step flow |
-| Skeleton loading | In flight | Shimmer placeholders for panels instead of text-only "Generating..." labels |
-| GFM markdown rendering | In flight | `remark-gfm` is already a dependency; wiring it into `NotesPanel` (tables, strikethrough, task lists) is the remaining step; `.prose-notes` styles for tables already exist |
-| Quiz progress + retake | In flight | Score summary exists after submit; a progress counter and a retake button that clears answers are planned |
-| Quiz state reset on regeneration | In flight | Known residual `AUDIT_REPORT.md` A13: `answers`/`submitted` persist when a new quiz is generated |
-| Flashcard keyboard navigation + reset | In flight | Arrow-key flip/navigation planned; `index`/`flipped` must reset when a new deck arrives |
-| Copy transcript button | In flight | One-click clipboard copy with feedback |
-| Empty / error / success states | Partial | Error banner exists; per-panel empty and success states are being rounded out |
-| Toast notifications | In flight | Ephemeral toasts for copy/download/success, complementing the banner |
-| Skip-link | In flight | `.skip-link` styles exist in `index.css`; the visible-on-focus element needs wiring into the JSX |
+| Drag-and-drop uploader | Done | Drop-zone highlighting, click-to-browse fallback, client-side file validation + metadata chip |
+| Pipeline progress indicator | Done | `Stepper` (upload → transcribe → generate) with done/current/pending states |
+| Skeleton loading | Done | Shimmer placeholders for notes/quiz/flashcards panels |
+| GFM markdown rendering | Done | `remark-gfm` wired into `NotesPanel`; `.prose-notes` covers tables, code, blockquotes, lists |
+| Quiz progress + retake | Done | Answered counter + progress bar + Retake button |
+| Quiz state reset on regeneration | Done | `useEffect` resets `answers`/`submitted` when a new quiz arrives |
+| Flashcard keyboard navigation + reset | Done | Arrow keys navigate, Space/Enter flips, `index`/`flipped` reset on new deck, Shuffle |
+| Copy transcript button | Done | One-click clipboard copy with feedback |
+| Empty / error / success states | Done | Error banner + toast, "ready ✓" buttons, per-panel empty states |
+| Toast notifications | Done | `Toast` component (role=status, auto-dismiss) |
+| Skip-link | Done | `.skip-link` wired into `App.jsx`, visible on focus |
 | `:focus-visible` outlines | Done | Global 2px indigo focus ring in `index.css` |
-| `aria-live` regions | In flight | Announce async panel updates to screen readers |
+| `aria-live` regions | Done | Loading skeletons and toast announce async updates |
 | Reduced-motion support | Done | Global `prefers-reduced-motion: reduce` rule in `index.css` |
 | Favicon | Done | `public/favicon.svg` (mic mark) linked in `index.html` |
 

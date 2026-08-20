@@ -2,6 +2,12 @@
 
 **AICTE + Edunet Foundation + IBM SkillsBuild · Artificial Intelligence Internship**
 
+> **Status note:** This document reflects the **final, production-hardened** implementation.
+> Earlier drafts described a *local* OpenAI Whisper model; the shipped app uses the
+> **Groq-hosted Whisper API** (`whisper-large-v3`) and the **Groq chat API**
+> (`openai/gpt-oss-20b`) — no local models, no FFmpeg, no GPU. See
+> [docs/AI_PIPELINE.md](docs/AI_PIPELINE.md) for details.
+
 ---
 
 ## 1. Project Overview
@@ -36,24 +42,25 @@
 │                    Flask API (Python) :5000                              │
 │  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  │
 │  │ File Upload │  │ Whisper Svc  │  │  Groq Svc   │  │ Export Svc   │  │
-│  │  Validator  │  │  (local STT) │  │  (Llama 3.3)│  │ PDF / TXT    │  │
+│  │  Validator  │  │ (hosted API) │  │  (gpt-oss)  │  │ PDF / TXT    │  │
 │  └──────┬──────┘  └──────┬───────┘  └──────┬──────┘  └──────────────┘  │
 │         │                │                 │                             │
 │         ▼                ▼                 ▼                             │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────────────┐ │
-│  │ uploads/    │  │ openai-      │  │ Groq API (cloud, free tier)      │ │
-│  │  (disk)     │  │ whisper      │  │ llama-3.3-70b-versatile          │ │
-│  └─────────────┘  └──────────────┘  └─────────────────────────────────┘ │
-│         In-memory session store (no SQLite required)                       │
+│  ┌─────────────┐  ┌────────────────────────┐  ┌───────────────────────┐ │
+│  │ uploads/    │  │  Groq API (cloud,      │  │ In-memory session     │ │
+│  │  (disk,     │  │  free tier):           │  │ store with TTL +      │ │
+│  │  auto-clean)│  │  whisper-large-v3      │  │ upload cleanup        │ │
+│  └─────────────┘  │  openai/gpt-oss-20b    │  └───────────────────────┘ │
+│                   └────────────────────────┘                           │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Data flow:**
 
-1. User uploads MP3/WAV/M4A → saved to `backend/uploads/`
-2. Whisper transcribes → transcript returned + `session_id`
-3. User triggers notes/quiz/flashcards → Groq reads transcript → structured JSON/markdown
-4. User downloads notes → `fpdf2` (PDF) or plain text
+1. User uploads MP3/WAV/M4A → validated (extension + magic bytes, ≤50 MB) → saved to `backend/uploads/`
+2. Groq-hosted Whisper transcribes → transcript + segments + language → `session_id` created
+3. User triggers notes/quiz/flashcards → Groq chat reads the transcript → structured markdown/JSON (schema-validated)
+4. User downloads notes → `fpdf2` (PDF, Unicode fonts) or plain text
 
 ---
 
@@ -63,42 +70,59 @@
 lecturemind-ai/
 ├── README.md
 ├── PROJECT_DOCUMENTATION.md
+├── LICENSE
 ├── .gitignore
+├── .gitattributes
+├── render.yaml
 ├── backend/
-│   ├── app.py                 # Flask routes
-│   ├── config.py              # Env & paths
+│   ├── app.py                 # Flask routes, middleware, error handling
+│   ├── config.py              # Env-driven config + validation
 │   ├── requirements.txt
+│   ├── requirements-dev.txt   # pytest + pytest-cov
 │   ├── .env.example
-│   ├── uploads/               # Temp audio files
+│   ├── uploads/               # Temp audio files (auto-cleaned)
+│   ├── assets/fonts/          # Unicode fonts for PDF export
 │   ├── services/
-│   │   ├── whisper_service.py
-│   │   ├── groq_service.py
-│   │   └── export_service.py
-│   └── utils/
-│       ├── file_validator.py
-│       └── prompts.py
+│   │   ├── whisper_service.py # Groq-hosted Whisper
+│   │   ├── groq_service.py    # Notes / quiz / flashcards via Groq chat
+│   │   ├── export_service.py  # PDF / TXT export
+│   │   └── session_store.py   # In-memory sessions with TTL + cleanup
+│   ├── utils/
+│   │   ├── file_validator.py  # Extension + magic-byte validation
+│   │   ├── parsing.py         # Robust JSON extraction + schema validation
+│   │   ├── security.py        # Rate limiting + safe error responses
+│   │   ├── logging.py         # Structured logging
+│   │   └── prompts.py         # Injection-resistant prompt templates
+│   └── tests/                 # pytest suite (29 tests)
 └── frontend/
     ├── package.json
     ├── vite.config.js
+    ├── vitest.config.js
+    ├── playwright.config.js
     ├── tailwind.config.js
     ├── postcss.config.js
     ├── index.html
-    └── src/
-        ├── main.jsx
-        ├── App.jsx
-        ├── index.css
-        ├── api/
-        │   └── client.js
-        ├── pages/
-        │   └── Home.jsx
-        └── components/
-            ├── Header.jsx
-            ├── AudioUploader.jsx
-            ├── TranscriptPanel.jsx
-            ├── NotesPanel.jsx
-            ├── QuizPanel.jsx
-            ├── FlashcardsPanel.jsx
-            └── LoadingSpinner.jsx
+    ├── public/
+    │   └── favicon.svg
+    ├── src/
+    │   ├── main.jsx
+    │   ├── App.jsx
+    │   ├── index.css
+    │   ├── api/
+    │   │   ├── client.js
+    │   │   └── client.test.js
+    │   ├── pages/
+    │   │   └── Home.jsx
+    │   └── components/
+    │       ├── Header.jsx
+    │       ├── AudioUploader.jsx
+    │       ├── Stepper.jsx
+    │       ├── TranscriptPanel.jsx
+    │       ├── NotesPanel.jsx
+    │       ├── QuizPanel.jsx
+│       ├── FlashcardsPanel.jsx
+│       └── Toast.jsx
+    └── e2e/                   # Playwright end-to-end tests
 ```
 
 ---
@@ -154,25 +178,29 @@ lecturemind-ai/
 
 ### Flask Structure
 
-- **`app.py`** – HTTP layer, CORS, session dict, error handlers
-- **`config.py`** – Centralized env (Groq key, Whisper model, upload limits)
-- **`services/`** – Business logic isolated from routes
-- **`utils/`** – Prompts, file validation
+- **`app.py`** – HTTP layer, CORS, session store, rate limiting, error handlers
+- **`config.py`** – Env-driven config (Groq key/model, Whisper model, upload limits) + prod validation
+- **`services/`** – Business logic isolated from routes (whisper, groq, export, sessions)
+- **`utils/`** – Prompts, file validation, JSON parsing, security, logging
 
 ### Service Layer
 
 | Service | Function |
 |---------|----------|
-| `whisper_service` | Load model once, `transcribe_audio(path)` |
-| `groq_service` | `generate_notes`, `generate_quiz`, `generate_flashcards` |
-| `export_service` | `notes_to_txt`, `notes_to_pdf` |
+| `whisper_service` | Groq-hosted Whisper transcription (text + segments + language) |
+| `groq_service` | `generate_notes`, `generate_quiz`, `generate_flashcards` (with retries, fallbacks, schema validation) |
+| `export_service` | `notes_to_txt`, `notes_to_pdf` (Unicode fonts) |
+| `session_store` | In-memory sessions with TTL expiry + uploaded-file cleanup |
 
 ### Utility Layer
 
 | Utility | Function |
 |---------|----------|
-| `file_validator` | Extension whitelist, `secure_filename` |
-| `prompts` | Production prompts for notes/quiz/flashcards |
+| `file_validator` | Extension whitelist + magic-byte (content signature) validation |
+| `prompts` | Injection-resistant prompts for notes/quiz/flashcards |
+| `parsing` | Robust JSON extraction + schema validation |
+| `security` | Rate limiting, sanitized error responses |
+| `logging` | Structured logging helpers |
 
 ---
 
@@ -291,16 +319,22 @@ flashcards(id, lecture_id, json_blob)
 ### Installation
 
 ```bash
-pip install groq==0.11.0
+pip install groq==0.37.1
 ```
 
 ### Environment
 
 ```env
 GROQ_API_KEY=<YOUR_GROQ_API_KEY>
+GROQ_MODEL=openai/gpt-oss-20b
 ```
 
 Get a free key: https://console.groq.com/
+
+> **Model note:** The originally planned `llama-3.3-70b-versatile` was
+> **deprecated by Groq** and returned `model_not_found` on every request. The
+> app now uses `openai/gpt-oss-20b` (configurable via `GROQ_MODEL`) with a
+> fallback model list, retries, and timeouts.
 
 ### Sample Implementation
 
@@ -308,9 +342,9 @@ Get a free key: https://console.groq.com/
 from groq import Groq
 from config import GROQ_API_KEY, GROQ_MODEL
 
-client = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=GROQ_API_KEY, timeout=90)
 response = client.chat.completions.create(
-    model=GROQ_MODEL,  # llama-3.3-70b-versatile
+    model=GROQ_MODEL,  # openai/gpt-oss-20b
     messages=[
         {"role": "system", "content": "You are LectureMind AI."},
         {"role": "user", "content": prompt},
@@ -321,35 +355,44 @@ response = client.chat.completions.create(
 text = response.choices[0].message.content
 ```
 
-See `backend/services/groq_service.py` for full implementation.
+See `backend/services/groq_service.py` for the full implementation (retries, model fallback, schema validation, prompt hardening).
 
 ---
 
-## 9. Whisper Integration
+## 9. Whisper Integration (Groq-hosted)
 
-### Installation
+The app uses the **Groq-hosted Whisper API** — there is **no local model, no
+FFmpeg, and no GPU requirement**. This keeps the free-tier Render deployment
+light and fast to boot.
 
-```bash
-pip install openai-whisper
-# FFmpeg must be on PATH
+### API
+
+```python
+from groq import Groq
+
+client = Groq(api_key=GROQ_API_KEY, timeout=120)
+transcription = client.audio.transcriptions.create(
+    file=audio_file,           # opened in binary mode
+    model="whisper-large-v3",  # or whisper-large-v3-turbo
+    response_format="verbose_json",  # returns text + segments + language
+)
 ```
 
 ### Model Selection
 
-| Model | Speed | Accuracy | RAM |
-|-------|-------|----------|-----|
-| tiny | Fastest | Lower | ~1 GB |
-| base | Balanced (default) | Good | ~1 GB |
-| small | Slower | Better | ~2 GB |
+| Model | Notes |
+|-------|-------|
+| `whisper-large-v3` | Highest accuracy (default) |
+| `whisper-large-v3-turbo` | Faster, slightly cheaper |
 
-Set in `.env`: `WHISPER_MODEL=base`
+Set in `.env`: `WHISPER_MODEL=whisper-large-v3`
 
 ### Pipeline
 
-1. Save uploaded audio to `uploads/{session_id}.ext`
-2. `whisper.load_model()` once (singleton)
-3. `model.transcribe(path, fp16=False)` → text + segments
-4. Return JSON to frontend
+1. Uploaded audio is validated (extension + magic bytes) and saved to `uploads/{session_id}.ext`
+2. `transcribe_audio(path)` calls the Groq-hosted Whisper API with `verbose_json`
+3. Text, segment timestamps, and language are returned (parsed defensively)
+4. Response + session are returned to the frontend
 
 See `backend/services/whisper_service.py`.
 
@@ -357,26 +400,30 @@ See `backend/services/whisper_service.py`.
 
 ## 10. Prompt Engineering
 
-Prompts live in `backend/utils/prompts.py`.
+Prompts live in `backend/utils/prompts.py`. Transcripts are wrapped in
+`<lecture_transcript>` markers and treated as **untrusted data** — every prompt
+instructs the model to ignore any instructions inside the transcript
+(prompt-injection resistance). Input is truncated to ~40k characters at a
+sentence boundary.
 
 ### A. Notes Generation
 
-- **Input:** Lecture transcript (truncated to ~12k chars)
-- **Processing:** Groq chat, temperature 0.2
+- **Input:** Lecture transcript (truncated)
+- **Processing:** Groq chat, temperature 0.2, markdown output
 - **Output:** Markdown with `##` headings, bullets, bold terms, Key Takeaways
-- **Guardrails:** “Do NOT invent facts not in transcript”
+- **Guardrails:** “Do NOT invent facts not in transcript” + untrusted-data markers
 
 ### B. Quiz Generation
 
 - **Input:** Transcript
 - **Output:** JSON with exactly 10 MCQs, 4 options, correct answer, difficulty, explanation
-- **Guardrails:** JSON-only response; answerable from transcript only
+- **Guardrails:** JSON-only; answerable from transcript only; output is schema-validated (10 questions, 4 options, valid answer letter) with one regeneration retry
 
 ### C. Flashcards Generation
 
 - **Input:** Transcript
-- **Output:** JSON with 15 Q/A pairs, concise answers
-- **Guardrails:** Revision-friendly phrasing
+- **Output:** JSON with 5–15 Q/A pairs, concise answers
+- **Guardrails:** Revision-friendly phrasing; validated + de-duplicated before render
 
 ---
 
@@ -470,7 +517,7 @@ curl -X POST -H "Content-Type: application/json" \
 |------|--------|-------------|
 | 1 | Open `localhost:5173` | “This is LectureMind AI for students who miss notes in lectures.” |
 | 2 | Upload 2–3 min sample lecture MP3 | “We support MP3, WAV, M4A up to 50 MB.” |
-| 3 | Wait for transcript | “Whisper converts speech to text locally—no paid STT API.” |
+| 3 | Wait for transcript | “Whisper (hosted on Groq, free tier) converts speech to text.” |
 | 4 | Click **Generate Notes** | “Groq Llama 3.3 creates exam-oriented structured notes.” |
 | 5 | Click **Download PDF** | “Students can export for offline revision.” |
 | 6 | Click **Generate Quiz** | “10 MCQs with instant scoring for self-assessment.” |
@@ -523,10 +570,10 @@ Internship project for AICTE + Edunet Foundation + IBM SkillsBuild. LectureMind 
 
 | Component | Input | Processing | Model | Output |
 |-----------|-------|------------|-------|--------|
-| Speech-to-Text | Audio file | Whisper transcribe | `whisper-base` (local) | Plain text + segments |
-| Summarization (Notes) | Transcript | Groq chat + prompt | `llama-3.3-70b-versatile` | Markdown notes |
-| Quiz Generation | Transcript | Groq + JSON prompt | Same | 10 MCQs JSON |
-| Flashcard Generation | Transcript | Groq + JSON prompt | Same | 15 Q/A JSON |
+| Speech-to-Text | Audio file | Whisper (Groq-hosted) | `whisper-large-v3` | Plain text + segments + language |
+| Summarization (Notes) | Transcript | Groq chat + prompt | `openai/gpt-oss-20b` | Markdown notes |
+| Quiz Generation | Transcript | Groq + JSON prompt | Same | 10 MCQs JSON (validated) |
+| Flashcard Generation | Transcript | Groq + JSON prompt | Same | 5–15 Q/A JSON (validated) |
 | Export | Markdown notes | fpdf2 / encode | N/A | PDF or TXT file |
 
 ---

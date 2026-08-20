@@ -29,7 +29,7 @@ architectural (state, concurrency, observability) rather than code quality.
   `backend/static` from `dist/*` (a stale build can never be served).
 - **Runtime**: Python 3.11.9; Node 20 used at build time only;
   `GROQ_API_KEY` injected via env with `sync: false` (never committed).
-- **Start**: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1`
+- **Start**: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1 --threads 4`
   (current `render.yaml`).
 - **Free-tier constraints** (behavioral):
   - Sleeps after ~15 minutes of inactivity; the first request wakes it
@@ -42,21 +42,9 @@ architectural (state, concurrency, observability) rather than code quality.
 | Fact | Implication |
 |---|---|
 | `--workers 1` | In-memory session store stays consistent (required — `ARCHITECTURE.md` §6) |
-| One request at a time | A 90–120 s Groq call blocks every other request on the instance |
-| `--timeout 120` > `WHISPER_TIMEOUT` (120) ≥ `GROQ_TIMEOUT` (90) | gunicorn only aborts after Groq itself gives up — deliberate, must be re-checked if timeouts change |
-| No `--threads` | Even `/api/health` and static assets wait behind a long generate |
-
-**Hardening plan (planned, not yet in `render.yaml`):**
-- Raise the gunicorn timeout to **300 s** (`--timeout 300`) so slow Groq
-  calls are never cut mid-flight; keep `--workers 1` for session
-  consistency.
-- Add **`--threads 4`** so the worker can answer health checks and serve
-  static assets while one thread is blocked on Groq. The session store is
-  lock-guarded (thread-safe); rate-limit counters are plain deques, safe
-  under the GIL for these operations, but worth a dedicated test.
-- This removes the worst "whole site frozen" behavior without breaking the
-  single-process session invariant. The real scaling path still requires
-  persistence (§4).
+| `--threads 4` | While one thread is blocked on Groq (I/O-bound), other requests (health, static, light API) are still served |
+| `--timeout 300` > `WHISPER_TIMEOUT` (120) ≥ `GROQ_TIMEOUT` (90) | gunicorn only aborts after Groq itself gives up — deliberate, must be re-checked if timeouts change |
+| GIL on CPU-bound work | True parallel CPU compute is limited, but these endpoints are network-bound |
 
 ## 4. Scaling path (in order)
 

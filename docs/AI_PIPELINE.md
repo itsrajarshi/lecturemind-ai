@@ -146,7 +146,7 @@ are documented (`docs/AUDIT_REPORT.md` A12).
 
 ## 3. Reliability summary
 
-- Timeouts: Whisper 120 s, chat 90 s — bounded by gunicorn `--timeout 120`.
+- Timeouts: Whisper 120 s, chat 90 s — bounded by gunicorn `--timeout 300`.
 - Retries: 2 attempts with backoff; one regeneration retry on schema failure.
 - Fallbacks: second chat model (`gpt-oss-120b`).
 - Grounding: fixed system prompt + "untrusted transcript" markers + "do not

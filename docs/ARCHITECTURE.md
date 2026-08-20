@@ -1,10 +1,8 @@
 # LectureMind AI — System Architecture
 
-> Applies to the **current** codebase state (post-hardening refactor, commit
-> `57e74f5`). This document supersedes the older `PROJECT_DOCUMENTATION.md`,
-> which still describes pre-refactor internals (e.g. a locally-hosted Whisper
-> model and the deprecated Groq chat model) and should not be treated as
-> authoritative for this state.
+> Applies to the **current** codebase state (post-hardening refactor).
+> `PROJECT_DOCUMENTATION.md` has been updated to match; this document is the
+> canonical technical reference.
 
 ## 1. Overview
 
@@ -26,8 +24,8 @@ The stack is deliberately small:
 | Backend | Flask 3 + the official `groq` Python SDK |
 | AI | Groq-hosted `whisper-large-v3` + `openai/gpt-oss-20b` chat model |
 | State | In-memory Python dict session store (no database) |
-| PDF export | `fpdf2` (server-side, no client PDF dependency) |
-| Deployment | Render free tier, built via `render-build.sh`, run by gunicorn (1 worker) |
+| PDF export | `fpdf2` (server-side, bundled Unicode fonts) |
+| Deployment | Render free tier, built via `render-build.sh`, run by gunicorn (1 worker, 4 threads) |
 
 In production the frontend is compiled with Vite and copied into
 `backend/static/`; Flask serves both the static SPA and the JSON API from a
@@ -161,7 +159,7 @@ lecturemind-ai/
 
 - **Render Blueprint** (`render.yaml`): Python web service, free plan,
   `rootDir: backend`, `buildCommand: bash render-build.sh`,
-  `startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1`.
+  `startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1 --threads 4`.
 - `render-build.sh` installs Python deps, runs `npm ci && npm run build` in
   `../frontend`, removes `backend/static`, and copies `dist/*` into it. The
   build output is therefore always fresh and never committed to git.

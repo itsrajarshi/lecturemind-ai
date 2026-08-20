@@ -47,19 +47,24 @@ stall; the gunicorn timeout must be larger than the longest blocking call.
 
 ## 4. Single-worker trade-offs and gunicorn tuning
 
-`render.yaml` starts: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
---workers 1`.
+`render.yaml` starts: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300
+--workers 1 --threads 4`.
 
 - **Why 1 worker**: the in-memory session store is process-local; multiple
   workers would fragment sessions and break the `X-Session-Id` workflow (see
   `docs/ARCHITECTURE.md` §6).
-- **Why `--timeout 120`**: the default gunicorn timeout (30 s) would kill a
-  long Whisper call. 120 s > `WHISPER_TIMEOUT` (120 s Groq-side) and >
+- **Why `--threads 4`**: gunicorn runs a threaded (gthread) worker, so while
+  one request is awaiting Groq (I/O-bound), other requests (e.g. health
+  checks) are still served. Python's GIL keeps CPU-bound work serialized, but
+  these endpoints are almost entirely network-bound.
+- **Why `--timeout 300`**: the default gunicorn timeout (30 s) would kill a
+  long Whisper call. 300 s > `WHISPER_TIMEOUT` (120 s Groq-side) and >
   `GROQ_TIMEOUT` (90 s), so gunicorn only aborts when Groq itself has given
   up. This is tuned deliberately and must be re-checked if timeouts change.
-- **Concurrency impact**: one request at a time per instance; users queue
-  behind a transcription. Acceptable for a demo; for real concurrency the app
-  needs async jobs (see `docs/TECH_DEBT.md` and `docs/ROADMAP.md`).
+- **Concurrency impact**: effective concurrency is bounded by the 4 threads;
+  heavy generation requests still queue. Acceptable for a demo; for real
+  concurrency the app needs async jobs (see `docs/TECH_DEBT.md` and
+  `docs/ROADMAP.md`).
 
 ## 5. Memory bounds (sessions)
 

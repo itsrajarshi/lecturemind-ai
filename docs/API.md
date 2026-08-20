@@ -1,13 +1,9 @@
 # LectureMind AI — HTTP API Reference
 
-> Describes the **current** API surface (commit `061b93e`, post-hardening).
-> Note: the older `AUDIT_REPORT.md` predates the latest commit — where it
-> lists residual issues (unknown `/api/*` returning 200, rate limits
-> returning 500, PDF encoding crashes), this document reflects the **fixed**
-> behavior verified in `backend/app.py`, `backend/utils/security.py`, and
-> the pytest suite. Companion docs: `ARCHITECTURE.md` (system overview),
-> `SECURITY_AUDIT.md` (threat model), `AI_PIPELINE.md` (what happens inside
-> each AI-backed endpoint).
+> Describes the **current** API surface (post-hardening). Behavior was verified
+> against `backend/app.py`, `backend/utils/security.py`, and the pytest suite.
+> Companion docs: `ARCHITECTURE.md` (system overview), `SECURITY_AUDIT.md`
+> (threat model), `AI_PIPELINE.md` (what happens inside each AI-backed endpoint).
 
 ## 1. Overview
 
